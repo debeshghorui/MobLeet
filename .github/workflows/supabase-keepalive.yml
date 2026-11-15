@@ -18,20 +18,39 @@ jobs:
       - name: Ping Supabase REST API
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
         run: |
           set -euo pipefail
 
-          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
-            echo "::error::SUPABASE_URL or SUPABASE_ANON_KEY secret is not set"
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_PUBLISHABLE_KEY" ]; then
+            echo "::error::SUPABASE_URL or SUPABASE_PUBLISHABLE_KEY secret is not set"
             exit 1
           fi
 
-          status=$(curl -sS -o /dev/null -w "%{http_code}" \
-            --max-time 15 \
-            -H "apikey: ${SUPABASE_ANON_KEY}" \
-            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
-            "${SUPABASE_URL}/rest/v1/")
+          # Normalize: strip trailing slashes so "...supabase.co/" works too
+          SUPABASE_URL="${SUPABASE_URL%/}"
+
+          args=(
+            -sS -o /dev/null -w "%{http_code}"
+            --max-time 15
+            -H "apikey: ${SUPABASE_PUBLISHABLE_KEY}"
+          )
+
+          case "$SUPABASE_PUBLISHABLE_KEY" in
+            eyJ*)
+              # Legacy JWT anon key: also send as Bearer token
+              args+=(-H "Authorization: Bearer ${SUPABASE_PUBLISHABLE_KEY}")
+              ;;
+            sb_publishable_*)
+              # New publishable key: apikey header only
+              ;;
+            *)
+              echo "::error::SUPABASE_PUBLISHABLE_KEY does not look like a valid key format"
+              exit 1
+              ;;
+          esac
+
+          status=$(curl "${args[@]}" "${SUPABASE_URL}/rest/v1/")
 
           echo "Supabase responded with HTTP ${status}"
 

@@ -1,0 +1,44 @@
+name: Supabase Health Check
+
+on:
+  schedule:
+    # Daily at 03:00 UTC. GitHub cron is best-effort — expect delays of
+    # minutes to a few hours, which is fine for a keep-alive ping.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Ping Supabase REST API
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::error::SUPABASE_URL or SUPABASE_ANON_KEY secret is not set"
+            exit 1
+          fi
+
+          status=$(curl -sS -o /dev/null -w "%{http_code}" \
+            --max-time 15 \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            "${SUPABASE_URL}/rest/v1/")
+
+          echo "Supabase responded with HTTP ${status}"
+
+          case "$status" in
+            2*|3*)
+              echo "Supabase is alive" ;;
+            *)
+              echo "::error::Supabase health check failed (HTTP ${status})"
+              exit 1 ;;
+          esac
